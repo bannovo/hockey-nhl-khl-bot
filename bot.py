@@ -7,7 +7,7 @@ import pytz
 import telebot
 import requests
 
-from nhlpy import NHLClient
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -26,12 +26,8 @@ logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
-try:
-    nhl_client = NHLClient()
-    logger.info("NHL Client успешно создан.")
-except Exception as e:
-    logger.exception(f"Ошибка при создании NHL Client: {e}")
-    nhl_client = None
+nhl_client = None
+logger.info("NHL временно отключен.")
 
 KHL_URL = "https://www.flashscorekz.com/hockey/russia/khl/results/"
 KHL_HEADERS = {
@@ -155,8 +151,7 @@ def fetch_khl_matches():
 
 
 def get_nhl_scores():
-    if nhl_client is None:
-        return "⚠️ Ошибка: Не удалось подключиться к сервису данных НХЛ."
+    return "🏒 НХЛ временно недоступна: библиотека nhlpy не запустилась на хостинге."
 
     today_moscow = datetime.datetime.now(MOSCOW_TZ).date()
     date_str = today_moscow.strftime("%Y-%m-%d")
