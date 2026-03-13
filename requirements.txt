@@ -1,0 +1,5 @@
+pyTelegramBotAPI==4.27.0
+pytz==2024.1
+requests==2.32.3
+APScheduler==3.10.4
+nhlpy
