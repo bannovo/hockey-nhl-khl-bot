@@ -27,7 +27,14 @@ logger = logging.getLogger(__name__)
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
 nhl_client = None
-logger.info("NHL временно отключен.")
+
+try:
+    from nhlpy import NHLClient
+    nhl_client = NHLClient()
+    logger.info("NHL Client успешно создан.")
+except Exception as e:
+    logger.exception(f"Не удалось инициализировать NHL Client: {e}")
+    nhl_client = None
 
 KHL_URL = "https://www.flashscorekz.com/hockey/russia/khl/results/"
 KHL_HEADERS = {
@@ -151,7 +158,48 @@ def fetch_khl_matches():
 
 
 def get_nhl_scores():
-    return "🏒 НХЛ временно недоступна: библиотека nhlpy не запустилась на хостинге."
+    """
+    Получает результаты матчей НХЛ за сегодня.
+    Возвращает отформатированную строку для отправки в Telegram.
+    """
+    if nhl_client is None:
+        return "🏒 НХЛ временно недоступна: не удалось подключиться к источнику данных."
+
+    today_moscow = datetime.datetime.now(MOSCOW_TZ).date()
+    date_str = today_moscow.strftime("%Y-%m-%d")
+
+    try:
+        logger.info(f"Запрашиваю расписание НХЛ на {date_str}")
+        daily_schedule = nhl_client.schedule.daily_schedule(date=date_str)
+
+        if not daily_schedule or "games" not in daily_schedule or not daily_schedule["games"]:
+            return f"🏒 НХЛ. Сегодня ({today_moscow.strftime('%d.%m.%Y')}) матчей нет."
+
+        message = f"🏒 **Результаты НХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\n"
+
+        for game in daily_schedule["games"]:
+            home_team = game["homeTeam"]["abbrev"]
+            away_team = game["awayTeam"]["abbrev"]
+            home_score = game["homeTeam"].get("score", 0)
+            away_score = game["awayTeam"].get("score", 0)
+            game_state = game.get("gameState", "")
+
+            if game_state == "OFF":
+                status_text = "🔴 Финальный счет"
+            elif game_state == "LIVE":
+                period = game.get("periodDescriptor", {}).get("number", 1)
+                status_text = f"⏱️ Идет {period}-й период"
+            else:
+                status_text = "⏳ Матч еще не начался"
+
+            message += f"{away_team} **{away_score}** : **{home_score}** {home_team}\n"
+            message += f"└ {status_text}\n\n"
+
+        return message
+
+    except Exception:
+        logger.exception("Ошибка при получении данных НХЛ")
+        return "⚠️ Произошла ошибка при получении данных НХЛ."
 
     today_moscow = datetime.datetime.now(MOSCOW_TZ).date()
     date_str = today_moscow.strftime("%Y-%m-%d")
