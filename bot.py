@@ -154,14 +154,16 @@ def get_khl_scores():
     try:
         logger.info("Запрашиваю данные КХЛ с Flashscore")
         matches = fetch_khl_matches()
+        logger.info(f"Всего получено матчей КХЛ: {len(matches)}")
 
         if not matches:
             return f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\nМатчи не найдены."
 
         today_matches = [m for m in matches if m["dt"] and m["dt"].date() == today_moscow]
+        logger.info(f"Матчей КХЛ за сегодня: {len(today_matches)}")
 
         if not today_matches:
-            return f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\nСегодня матчей не найдено."
+            return f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\nСегодня матчей не было."
 
         message = f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\n"
 
@@ -171,6 +173,7 @@ def get_khl_scores():
                 f"└ 🔴 Финальный счет\n\n"
             )
 
+        logger.info("Сообщение по КХЛ успешно сформировано")
         return message
 
     except Exception:
@@ -179,48 +182,7 @@ def get_khl_scores():
 
 
 def get_nhl_scores():
-    """
-    Получает результаты матчей НХЛ за сегодня через официальный API NHL.
-    """
-    today_moscow = datetime.datetime.now(MOSCOW_TZ).date()
-    date_str = today_moscow.strftime("%Y-%m-%d")
-    url = f"https://api-web.nhle.com/v1/score/{date_str}"
-
-    try:
-        logger.info(f"Запрашиваю данные НХЛ по URL: {url}")
-        response = requests.get(url, timeout=20)
-        response.raise_for_status()
-        data = response.json()
-
-        games = data.get("games", [])
-        if not games:
-            return f"🏒 НХЛ. Сегодня ({today_moscow.strftime('%d.%m.%Y')}) матчей нет."
-
-        message = f"🏒 **Результаты НХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\n"
-
-        for game in games:
-            away_team = game.get("awayTeam", {}).get("abbrev", "AWAY")
-            home_team = game.get("homeTeam", {}).get("abbrev", "HOME")
-            away_score = game.get("awayTeam", {}).get("score", 0)
-            home_score = game.get("homeTeam", {}).get("score", 0)
-            game_state = game.get("gameState", "")
-
-            if game_state == "OFF":
-                status_text = "🔴 Финальный счет"
-            elif game_state == "LIVE":
-                period = game.get("periodDescriptor", {}).get("number", 1)
-                status_text = f"⏱️ Идет {period}-й период"
-            else:
-                status_text = "⏳ Матч еще не начался"
-
-            message += f"{away_team} **{away_score}** : **{home_score}** {home_team}\n"
-            message += f"└ {status_text}\n\n"
-
-        return message
-
-    except Exception:
-        logger.exception("Ошибка при получении данных НХЛ")
-        return "⚠️ Произошла ошибка при получении данных НХЛ."
+    return "🏒 Данные НХЛ временно недоступны. Возвращаемся к этому позже."
 
 
 @bot.message_handler(commands=["start"])
@@ -230,8 +192,8 @@ def send_welcome(message):
         message,
         "Привет! Я бот с результатами матчей КХЛ и НХЛ.\n"
         "Я автоматически присылаю результаты:\n"
-        "🇷🇺 КХЛ в 23:00 по Москве\n"
-        "🇺🇸 НХЛ в 10:00 по Москве\n"
+        "🇷🇺 КХЛ в 22:00 по Москве\n"
+        "🇺🇸 НХЛ будет доступна позже\n"
         "Используй команды /nhl или /khl, чтобы получить результаты сейчас."
     )
 
@@ -239,9 +201,7 @@ def send_welcome(message):
 @bot.message_handler(commands=["nhl"])
 def send_nhl_now(message):
     logger.info(f"Получена команда /nhl от chat_id={message.chat.id}")
-    bot.send_message(message.chat.id, "Запрашиваю данные по НХЛ...")
-    result = get_nhl_scores()
-    bot.send_message(message.chat.id, result)
+    bot.send_message(message.chat.id, "🏒 Данные НХЛ временно недоступны. Возвращаемся к этому позже.")
 
 
 @bot.message_handler(commands=["khl"])
@@ -266,29 +226,32 @@ def safe_send_to_subscribers(text: str):
     for chat_id in AUTO_SEND_CHAT_IDS:
         try:
             bot.send_message(chat_id, text)
-            logger.info(f"Сообщение отправлено в chat_id={chat_id}")
+            logger.info(f"Отправлено сообщение в chat_id={chat_id}")
         except Exception:
             logger.exception(f"Ошибка отправки сообщения в chat_id={chat_id}")
 
 
 def scheduled_nhl():
-    logger.info("Запуск запланированной отправки НХЛ")
-    result = get_nhl_scores()
-    logger.info(f"Результат для отправки: {result}")
-    safe_send_to_subscribers(result)
+    # Заглушка — пока не отправляем
+    logger.info("Запуск запланированной отправки НХЛ (заглушка)")
+    message = get_nhl_scores()
+    safe_send_to_subscribers(message)
 
 
 def scheduled_khl():
     logger.info("Запуск запланированной отправки КХЛ")
-    result = get_khl_scores()
-    logger.info(f"Результат для отправки: {result}")
-    safe_send_to_subscribers(result)
+    message = get_khl_scores()
+
+    if "не было" in message.lower() or "не найдено" in message.lower():
+        message = f"🇷🇺 Результаты КХЛ за сегодня:\n\nСегодня матчей КХЛ не было."
+
+    safe_send_to_subscribers(message)
 
 
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone=MOSCOW_TZ)
     scheduler.add_job(scheduled_nhl, CronTrigger(hour=10, minute=0, timezone=MOSCOW_TZ))
-    scheduler.add_job(scheduled_khl, CronTrigger(hour=23, minute=0, timezone=MOSCOW_TZ))
+    scheduler.add_job(scheduled_khl, CronTrigger(hour=22, minute=0, timezone=MOSCOW_TZ))
     scheduler.start()
     logger.info("Планировщик запущен.")
     return scheduler
