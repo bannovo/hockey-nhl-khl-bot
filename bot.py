@@ -215,7 +215,7 @@ def send_khl_now(message):
 @bot.message_handler(commands=["id"])
 def send_chat_id(message):
     logger.info(f"Получена команда /id от chat_id={message.chat.id}")
-    bot.reply_to(message, f"Ваш chat_id: {message.chat.id}")
+    bot.reply_to(message, f"Ваш chat id: {message.chat.id}")
 
 
 def safe_send_to_subscribers(text: str):
