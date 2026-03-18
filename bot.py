@@ -1,7 +1,7 @@
-import os
 import time
 import logging
 import datetime
+import re
 
 import pytz
 import telebot
@@ -11,9 +11,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise RuntimeError("Не задана переменная окружения BOT_TOKEN")
+BOT_TOKEN = "8750772717:AAFC58ksrEf_jT9_9oEXDxTt2ew0lEWcjlY"
+if BOT_TOKEN == "8750772717:AAFC58ksrEf_jT9_9oEXDxTt2ew0lEWcjlY":
+    raise RuntimeError("Вставь токен бота в переменную BOT_TOKEN")
 
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
+# ВШИТЫЙ chat id для проверки автоотправки
+AUTO_SEND_CHAT_IDS = [188181889]
 
 KHL_URL = "https://www.flashscorekz.com/hockey/russia/khl/results/"
 KHL_HEADERS = {
@@ -57,21 +59,8 @@ KHL_TEAMS = {
     "ЦСКА",
 }
 
-AUTO_SEND_CHAT_IDS_RAW = os.getenv("AUTO_SEND_CHAT_IDS", "").strip()
-AUTO_SEND_CHAT_IDS = []
-
-if AUTO_SEND_CHAT_IDS_RAW:
-    for item in AUTO_SEND_CHAT_IDS_RAW.split(","):
-        item = item.strip()
-        if item:
-            try:
-                AUTO_SEND_CHAT_IDS.append(int(item))
-            except ValueError:
-                logger.warning(f"Некорректный chat id в AUTO_SEND_CHAT_IDS: {item}")
-
 
 def extract_khl_value(block: str, key: str):
-    import re
     pattern = rf"{re.escape(key)}÷(.*?)(?:¬|$)"
     match = re.search(pattern, block)
     return match.group(1).strip() if match else None
@@ -219,16 +208,11 @@ def send_chat_id(message):
 
 
 def safe_send_to_subscribers(text: str):
-    chat_ids = AUTO_SEND_CHAT_IDS
-
-    if isinstance(chat_ids, int):
-        chat_ids = [chat_ids]
-
-    if not chat_ids:
+    if not AUTO_SEND_CHAT_IDS:
         logger.info("AUTO_SEND_CHAT_IDS не заданы, автосообщения пропущены.")
         return
 
-    for chat_id in chat_ids:
+    for chat_id in AUTO_SEND_CHAT_IDS:
         try:
             bot.send_message(chat_id, text)
             logger.info(f"Отправлено сообщение в chat id={chat_id}")
@@ -258,7 +242,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=10, minute=10, timezone=MOSCOW_TZ)
+        CronTrigger(hour=10, minute=45, timezone=MOSCOW_TZ)
     )
 
     scheduler.start()
