@@ -58,7 +58,7 @@ KHL_TEAMS = {
 }
 
 AUTO_SEND_CHAT_IDS_RAW = os.getenv("AUTO_SEND_CHAT_IDS", "").strip()
-AUTO_SEND_CHAT_IDS=188181889
+AUTO_SEND_CHAT_IDS = []
 
 if AUTO_SEND_CHAT_IDS_RAW:
     for item in AUTO_SEND_CHAT_IDS_RAW.split(","):
@@ -67,7 +67,7 @@ if AUTO_SEND_CHAT_IDS_RAW:
             try:
                 AUTO_SEND_CHAT_IDS.append(int(item))
             except ValueError:
-                logger.warning(f"Некорректный chat_id в AUTO_SEND_CHAT_IDS: {item}")
+                logger.warning(f"Некорректный chat id в AUTO_SEND_CHAT_IDS: {item}")
 
 
 def extract_khl_value(block: str, key: str):
@@ -157,13 +157,13 @@ def get_khl_scores():
         logger.info(f"Всего получено матчей КХЛ: {len(matches)}")
 
         if not matches:
-            return f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\nМатчи не найдены."
+            return f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\nСегодня матчей КХЛ не было."
 
         today_matches = [m for m in matches if m["dt"] and m["dt"].date() == today_moscow]
         logger.info(f"Матчей КХЛ за сегодня: {len(today_matches)}")
 
         if not today_matches:
-            return f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\nСегодня матчей не было."
+            return f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\nСегодня матчей КХЛ не было."
 
         message = f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\n"
 
@@ -193,7 +193,7 @@ def send_welcome(message):
         "Привет! Я бот с результатами матчей КХЛ и НХЛ.\n"
         "Я автоматически присылаю результаты:\n"
         "🇷🇺 КХЛ в 22:00 по Москве\n"
-        "🇺🇸 НХЛ будет доступна позже\n"
+        "🇺🇸 НХЛ временно недоступна\n"
         "Используй команды /nhl или /khl, чтобы получить результаты сейчас."
     )
 
@@ -219,20 +219,24 @@ def send_chat_id(message):
 
 
 def safe_send_to_subscribers(text: str):
-    if not AUTO_SEND_CHAT_IDS:
+    chat_ids = AUTO_SEND_CHAT_IDS
+
+    if isinstance(chat_ids, int):
+        chat_ids = [chat_ids]
+
+    if not chat_ids:
         logger.info("AUTO_SEND_CHAT_IDS не заданы, автосообщения пропущены.")
         return
 
-    for chat_id in AUTO_SEND_CHAT_IDS:
+    for chat_id in chat_ids:
         try:
             bot.send_message(chat_id, text)
-            logger.info(f"Отправлено сообщение в chat_id={chat_id}")
+            logger.info(f"Отправлено сообщение в chat id={chat_id}")
         except Exception:
-            logger.exception(f"Ошибка отправки сообщения в chat_id={chat_id}")
+            logger.exception(f"Ошибка отправки сообщения в chat id={chat_id}")
 
 
 def scheduled_nhl():
-    # Заглушка — пока не отправляем
     logger.info("Запуск запланированной отправки НХЛ (заглушка)")
     message = get_nhl_scores()
     safe_send_to_subscribers(message)
@@ -241,19 +245,25 @@ def scheduled_nhl():
 def scheduled_khl():
     logger.info("Запуск запланированной отправки КХЛ")
     message = get_khl_scores()
-
-    if "не было" in message.lower() or "не найдено" in message.lower():
-        message = f"🇷🇺 Результаты КХЛ за сегодня:\n\nСегодня матчей КХЛ не было."
-
     safe_send_to_subscribers(message)
 
 
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone=MOSCOW_TZ)
-    scheduler.add_job(scheduled_nhl, CronTrigger(hour=10, minute=0, timezone=MOSCOW_TZ))
-    scheduler.add_job(scheduled_khl, CronTrigger(hour=9, minute=45, timezone=MOSCOW_TZ))
+
+    scheduler.add_job(
+        scheduled_nhl,
+        CronTrigger(hour=10, minute=0, timezone=MOSCOW_TZ)
+    )
+
+    scheduler.add_job(
+        scheduled_khl,
+        CronTrigger(hour=10, minute=10, timezone=MOSCOW_TZ)
+    )
+
     scheduler.start()
     logger.info("Планировщик запущен.")
+    logger.info(f"Загружены chat ids для автосообщений: {AUTO_SEND_CHAT_IDS}")
     return scheduler
 
 
