@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 import datetime
@@ -11,9 +12,9 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 
-BOT_TOKEN = "8750772717:AAFC58ksrEf_jT9_9oEXDxTt2ew0lEWcjlY"
-if BOT_TOKEN == "8750772717:AAFC58ksrEf_jT9_9oEXDxTt2ew0lEWcjlY":
-    raise RuntimeError("Вставь токен бота в переменную BOT_TOKEN")
+BOT_TOKEN = os.getenv("8750772717:AAFC58ksrEf_jT9_9oEXDxTt2ew0lEWcjlY")
+if not BOT_TOKEN:
+    raise RuntimeError("Не задана переменная окружения BOT_TOKEN")
 
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
@@ -242,7 +243,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=10, minute=45, timezone=MOSCOW_TZ)
+        CronTrigger(hour=15, minute=0, timezone=MOSCOW_TZ)
     )
 
     scheduler.start()
