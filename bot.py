@@ -251,7 +251,7 @@ def scheduled_khl():
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone=MOSCOW_TZ)
     scheduler.add_job(scheduled_nhl, CronTrigger(hour=10, minute=0, timezone=MOSCOW_TZ))
-    scheduler.add_job(scheduled_khl, CronTrigger(hour=09, minute=45, timezone=MOSCOW_TZ))
+    scheduler.add_job(scheduled_khl, CronTrigger(hour=9, minute=45, timezone=MOSCOW_TZ))
     scheduler.start()
     logger.info("Планировщик запущен.")
     return scheduler
