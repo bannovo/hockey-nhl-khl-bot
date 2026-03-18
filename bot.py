@@ -58,7 +58,7 @@ KHL_TEAMS = {
 }
 
 AUTO_SEND_CHAT_IDS_RAW = os.getenv("AUTO_SEND_CHAT_IDS", "").strip()
-AUTO_SEND_CHAT_IDS = []
+AUTO_SEND_CHAT_IDS=188181889
 
 if AUTO_SEND_CHAT_IDS_RAW:
     for item in AUTO_SEND_CHAT_IDS_RAW.split(","):
@@ -251,7 +251,7 @@ def scheduled_khl():
 def start_scheduler():
     scheduler = BackgroundScheduler(timezone=MOSCOW_TZ)
     scheduler.add_job(scheduled_nhl, CronTrigger(hour=10, minute=0, timezone=MOSCOW_TZ))
-    scheduler.add_job(scheduled_khl, CronTrigger(hour=22, minute=0, timezone=MOSCOW_TZ))
+    scheduler.add_job(scheduled_khl, CronTrigger(hour=09, minute=45, timezone=MOSCOW_TZ))
     scheduler.start()
     logger.info("Планировщик запущен.")
     return scheduler
