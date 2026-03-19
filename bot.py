@@ -86,6 +86,12 @@ TEAM_EMOJI = {
     "ЦСКА": "🔴",
 }
 
+# Сюда потом подставим реальные custom emoji ID
+TEAM_CUSTOM_EMOJI = {
+    # "Торпедо": "5321177129252066955",
+    # "Амур": "5323509004436018932",
+}
+
 
 def team_with_emoji(team_name: str) -> str:
     emoji = TEAM_EMOJI.get(team_name, "🏒")
@@ -368,7 +374,16 @@ def debug_custom_emoji(message):
     lines = []
     for entity in message.entities:
         entity_type = getattr(entity, "type", None)
+        if entity_type is None:
+            entity_type = getattr(entity, "type".replace("_", ""), None)
+
         custom_emoji_id = getattr(entity, "custom_emoji_id", None)
+        if custom_emoji_id is None:
+            custom_emoji_id = getattr(entity, "customemojiid", None)
+
+        if custom_emoji_id is None:
+            custom_emoji_id = getattr(entity, "custom_emojiid", None)
+
         offset = getattr(entity, "offset", None)
         length = getattr(entity, "length", None)
 
