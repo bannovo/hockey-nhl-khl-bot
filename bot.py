@@ -60,6 +60,37 @@ KHL_TEAMS = {
     "ЦСКА",
 }
 
+TEAM_EMOJI = {
+    "Авангард": "🦅",
+    "Автомобилист": "🚗",
+    "Адмирал": "⚓",
+    "Ак Барс": "🐆",
+    "Амур": "🐯",
+    "Барыс": "🐆",
+    "Витязь": "🛡️",
+    "Динамо Москва": "🔵",
+    "Динамо Минск": "🔵",
+    "Шанхайские Драконы": "🐉",
+    "Лада": "🚘",
+    "Локомотив": "🚂",
+    "Металлург": "⚒️",
+    "Нефтехимик": "🧪",
+    "Салават Юлаев": "🟢",
+    "Северсталь": "⚙️",
+    "Сибирь": "❄️",
+    "СКА": "⭐",
+    "Сочи": "🌴",
+    "Спартак Москва": "🔴",
+    "Торпедо": "🏎️",
+    "Трактор": "🚜",
+    "ЦСКА": "🔴",
+}
+
+
+def team_with_emoji(team_name: str) -> str:
+    emoji = TEAM_EMOJI.get(team_name, "🏒")
+    return f"{emoji} {team_name}"
+
 
 def extract_khl_value(block: str, key: str):
     pattern = rf"{re.escape(key)}÷(.*?)(?:¬|$)"
@@ -223,8 +254,11 @@ def get_khl_scores():
         message = f"🇷🇺 **Результаты КХЛ за {today_moscow.strftime('%d.%m.%Y')}**\n\n"
 
         for match in today_matches:
+            home_name = team_with_emoji(match["home"])
+            away_name = team_with_emoji(match["away"])
+
             message += (
-                f"{match['home']} **{match['home_score']}** : **{match['away_score']}** {match['away']}\n"
+                f"{home_name} **{match['home_score']}** : **{match['away_score']}** {away_name}\n"
                 f"└ 🔴 Финальный счет\n\n"
             )
 
@@ -253,14 +287,17 @@ def get_khl_today_schedule():
         message = f"📅 **Матчи КХЛ на {today_moscow.strftime('%d.%m.%Y')}**\n\n"
 
         for match in today_matches:
+            home_name = team_with_emoji(match["home"])
+            away_name = team_with_emoji(match["away"])
+
             if match["home_score"] is not None and match["away_score"] is not None:
                 message += (
-                    f"{match['home']} **{match['home_score']}** : **{match['away_score']}** {match['away']}\n"
+                    f"{home_name} **{match['home_score']}** : **{match['away_score']}** {away_name}\n"
                 )
             else:
                 start_time = match["dt"].strftime("%H:%M") if match["dt"] else "—:—"
                 message += (
-                    f"{match['home']} — {match['away']}\n"
+                    f"{home_name} — {away_name}\n"
                     f"└ 🕒 Начало в {start_time} МСК\n"
                 )
 
@@ -318,6 +355,29 @@ def send_khl_day(message):
 def send_chat_id(message):
     logger.info(f"Получена команда /id от chat_id={message.chat.id}")
     bot.reply_to(message, f"Ваш chat id: {message.chat.id}")
+
+
+@bot.message_handler(content_types=["text"])
+def debug_custom_emoji(message):
+    logger.info(f"Получено текстовое сообщение: {message.text!r}")
+
+    if not message.entities:
+        bot.reply_to(message, "В сообщении нет entities.")
+        return
+
+    lines = []
+    for entity in message.entities:
+        entity_type = getattr(entity, "type", None)
+        custom_emoji_id = getattr(entity, "custom_emoji_id", None)
+        offset = getattr(entity, "offset", None)
+        length = getattr(entity, "length", None)
+
+        lines.append(
+            f"type={entity_type}, offset={offset}, length={length}, custom_emoji_id={custom_emoji_id}"
+        )
+
+    reply = "Найдены entities:\n" + "\n".join(lines)
+    bot.reply_to(message, reply)
 
 
 def safe_send_to_subscribers(text: str):
@@ -385,28 +445,6 @@ def run_bot():
             time.sleep(15)
 
 
-@bot.message_handler(content_types=["text"])
-def debug_custom_emoji(message):
-    logger.info(f"Получено текстовое сообщение: {message.text!r}")
-
-    if not message.entities:
-        bot.reply_to(message, "В сообщении нет entities.")
-        return
-
-    lines = []
-    for entity in message.entities:
-        entity_type = getattr(entity, "type", None)
-        custom_emoji_id = getattr(entity, "custom_emoji_id", None)
-        offset = getattr(entity, "offset", None)
-        length = getattr(entity, "length", None)
-
-        lines.append(
-            f"type={entity_type}, offset={offset}, length={length}, custom_emoji_id={custom_emoji_id}"
-        )
-
-    reply = "Найдены entities:\n" + "\n".join(lines)
-    bot.reply_to(message, reply)
-    
 if __name__ == "__main__":
     logger.info("Бот запускается...")
     start_scheduler()
