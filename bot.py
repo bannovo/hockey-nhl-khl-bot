@@ -26,9 +26,11 @@ logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
+# ВШИТЫЙ chat id для проверки автоотправки
 AUTO_SEND_CHAT_IDS = [188181889]
 
 KHL_URL = "https://www.flashscorekz.com/hockey/russia/khl/results/"
+KHL_FIXTURES_URL = "https://www.flashscorekz.com/hockey/russia/khl/fixtures/"
 KHL_HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
@@ -100,6 +102,37 @@ def parse_khl_match_block(block: str):
     return match_data
 
 
+def parse_khl_fixture_block(block: str):
+    home = extract_khl_value(block, "CX") or extract_khl_value(block, "AE")
+    away = extract_khl_value(block, "AF")
+    timestamp = extract_khl_value(block, "AD")
+    home_score = extract_khl_value(block, "AG")
+    away_score = extract_khl_value(block, "AH")
+
+    if not home or not away:
+        return None
+
+    if home not in KHL_TEAMS or away not in KHL_TEAMS:
+        return None
+
+    match_data = {
+        "home": home,
+        "away": away,
+        "home_score": home_score,
+        "away_score": away_score,
+        "timestamp": timestamp,
+        "date": None,
+        "dt": None,
+    }
+
+    if timestamp and timestamp.isdigit():
+        dt = datetime.datetime.fromtimestamp(int(timestamp), tz=MOSCOW_TZ)
+        match_data["date"] = dt.strftime("%d.%m.%Y %H:%M")
+        match_data["dt"] = dt
+
+    return match_data
+
+
 def fetch_khl_matches():
     response = requests.get(KHL_URL, headers=KHL_HEADERS, timeout=20)
     response.raise_for_status()
@@ -132,6 +165,40 @@ def fetch_khl_matches():
     unique_matches.sort(
         key=lambda x: x["dt"] if x["dt"] else min_dt,
         reverse=True
+    )
+
+    return unique_matches
+
+
+def fetch_khl_fixtures():
+    response = requests.get(KHL_FIXTURES_URL, headers=KHL_HEADERS, timeout=20)
+    response.raise_for_status()
+
+    html = response.text
+    raw_blocks = html.split("~AA÷")
+    matches = []
+
+    for block in raw_blocks:
+        match_data = parse_khl_fixture_block(block)
+        if match_data:
+            matches.append(match_data)
+
+    unique_matches = []
+    seen = set()
+
+    for match in matches:
+        key = (
+            match["home"],
+            match["away"],
+            match["timestamp"],
+        )
+        if key not in seen:
+            seen.add(key)
+            unique_matches.append(match)
+
+    min_dt = MOSCOW_TZ.localize(datetime.datetime(1970, 1, 1))
+    unique_matches.sort(
+        key=lambda x: x["dt"] if x["dt"] else min_dt
     )
 
     return unique_matches
@@ -170,6 +237,44 @@ def get_khl_scores():
         return "⚠️ Произошла ошибка при получении данных КХЛ."
 
 
+def get_khl_today_schedule():
+    today_moscow = datetime.datetime.now(MOSCOW_TZ).date()
+
+    try:
+        logger.info("Запрашиваю расписание КХЛ на текущий игровой день")
+        matches = fetch_khl_fixtures()
+        logger.info(f"Всего получено матчей КХЛ из fixtures: {len(matches)}")
+
+        today_matches = [m for m in matches if m["dt"] and m["dt"].date() == today_moscow]
+        logger.info(f"Матчей КХЛ на сегодня: {len(today_matches)}")
+
+        if not today_matches:
+            return f"📅 **Матчи КХЛ на {today_moscow.strftime('%d.%m.%Y')}**\n\nНа сегодня матчей не найдено."
+
+        message = f"📅 **Матчи КХЛ на {today_moscow.strftime('%d.%m.%Y')}**\n\n"
+
+        for match in today_matches:
+            if match["home_score"] is not None and match["away_score"] is not None:
+                message += (
+                    f"{match['away']} **{match['away_score']}** : **{match['home_score']}** {match['home']}\n"
+                )
+            else:
+                start_time = match["dt"].strftime("%H:%M") if match["dt"] else "—:—"
+                message += (
+                    f"{match['away']} — {match['home']}\n"
+                    f"└ 🕒 Начало в {start_time} МСК\n"
+                )
+
+            message += "\n"
+
+        logger.info("Сообщение по игровому дню КХЛ успешно сформировано")
+        return message
+
+    except Exception:
+        logger.exception("Ошибка при получении расписания КХЛ")
+        return "⚠️ Не удалось получить расписание матчей КХЛ на сегодня."
+
+
 def get_nhl_scores():
     return "🏒 Данные НХЛ временно недоступны. Возвращаемся к этому позже."
 
@@ -180,10 +285,11 @@ def send_welcome(message):
     bot.reply_to(
         message,
         "Привет! Я бот с результатами матчей КХЛ и НХЛ.\n"
-        "Я автоматически присылаю результаты:\n"
-        "🇷🇺 КХЛ в 22:00 по Москве\n"
-        "🇺🇸 НХЛ временно недоступна\n"
-        "Используй команды /nhl или /khl, чтобы получить результаты сейчас."
+        "Команды:\n"
+        "/khl — результаты КХЛ\n"
+        "/day — матчи КХЛ текущего игрового дня\n"
+        "/nhl — НХЛ временно недоступна\n"
+        "/id — показать ваш chat id"
     )
 
 
@@ -198,6 +304,14 @@ def send_khl_now(message):
     logger.info(f"Получена команда /khl от chat_id={message.chat.id}")
     bot.send_message(message.chat.id, "Запрашиваю данные по КХЛ...")
     result = get_khl_scores()
+    bot.send_message(message.chat.id, result)
+
+
+@bot.message_handler(commands=["day", "today"])
+def send_khl_day(message):
+    logger.info(f"Получена команда /day от chat_id={message.chat.id}")
+    bot.send_message(message.chat.id, "Смотрю матчи КХЛ на текущий игровой день...")
+    result = get_khl_today_schedule()
     bot.send_message(message.chat.id, result)
 
 
@@ -242,7 +356,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=9, minute=50, timezone=MOSCOW_TZ)
+        CronTrigger(hour=10, minute=10, timezone=MOSCOW_TZ)
     )
 
     scheduler.start()
@@ -262,7 +376,11 @@ def run_bot():
 
     while True:
         try:
-            bot.infinity_polling(timeout=30, long_polling_timeout=30, skip_pending=True)
+            bot.infinity_polling(
+                timeout=30,
+                long_polling_timeout=30,
+                skip_pending=True
+            )
         except Exception:
             logger.exception("Polling упал, перезапуск через 15 секунд...")
             time.sleep(15)
