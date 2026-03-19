@@ -92,6 +92,10 @@ TEAM_CUSTOM_EMOJI = {
 }
 
 
+def utf16_len(text: str) -> int:
+    return len(text.encode("utf-16-le")) // 2
+
+
 def extract_khl_value(block: str, key: str):
     pattern = rf"{re.escape(key)}÷(.*?)(?:¬|$)"
     match = re.search(pattern, block)
@@ -250,43 +254,34 @@ def build_team_token(team_name: str):
 def build_text_and_entities_from_lines(lines):
     full_text = ""
     entities = []
-    current_offset = 0
 
     for line in lines:
         line_text = ""
-        line_entities = []
 
         for part in line:
             if isinstance(part, dict) and "text" in part:
                 token_text = part["text"]
+                offset_utf16 = utf16_len(full_text + line_text)
+
                 line_text += token_text
 
                 custom_emoji_id = part.get("custom_emoji_id")
                 if custom_emoji_id:
-                    line_entities.append({
+                    entities.append({
                         "type": "custom_emoji",
-                        "offset": len(line_text) - len(token_text),
-                        "length": len(token_text),
+                        "offset": offset_utf16,
+                        "length": utf16_len(token_text),
                         "custom_emoji_id": custom_emoji_id,
                     })
             else:
                 line_text += str(part)
 
-        for entity in line_entities:
-            entities.append({
-                "type": entity["type"],
-                "offset": current_offset + entity["offset"],
-                "length": entity["length"],
-                "custom_emoji_id": entity["custom_emoji_id"],
-            })
-
         full_text += line_text + "\n"
-        current_offset = len(full_text)
 
-    return full_text.rstrip(), entities
+    return full_text.rstrip("\n"), entities
 
 
-def send_message_with_entities(chat_id: int, text: str, entities: list | None = None):
+def send_message_with_entities(chat_id: int, text: str, entities=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     payload = {
@@ -297,7 +292,14 @@ def send_message_with_entities(chat_id: int, text: str, entities: list | None = 
     if entities:
         payload["entities"] = entities
 
+    logger.info(f"Отправка текста: {text!r}")
+    logger.info(f"Отправка entities: {entities!r}")
+
     response = requests.post(url, json=payload, timeout=30)
+
+    logger.info(f"Telegram status_code: {response.status_code}")
+    logger.info(f"Telegram response text: {response.text}")
+
     response.raise_for_status()
 
     result = response.json()
