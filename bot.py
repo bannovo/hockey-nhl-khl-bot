@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
-# ВШИТЫЙ chat id для проверки автоотправки
 AUTO_SEND_CHAT_IDS = [188181889]
 
 KHL_URL = "https://www.flashscorekz.com/hockey/russia/khl/results/"
@@ -225,7 +224,7 @@ def get_khl_scores():
 
         for match in today_matches:
             message += (
-                f"{match['away']} **{match['away_score']}** : **{match['home_score']}** {match['home']}\n"
+                f"{match['home']} **{match['home_score']}** : **{match['away_score']}** {match['away']}\n"
                 f"└ 🔴 Финальный счет\n\n"
             )
 
@@ -256,12 +255,12 @@ def get_khl_today_schedule():
         for match in today_matches:
             if match["home_score"] is not None and match["away_score"] is not None:
                 message += (
-                    f"{match['away']} **{match['away_score']}** : **{match['home_score']}** {match['home']}\n"
+                    f"{match['home']} **{match['home_score']}** : **{match['away_score']}** {match['away']}\n"
                 )
             else:
                 start_time = match["dt"].strftime("%H:%M") if match["dt"] else "—:—"
                 message += (
-                    f"{match['away']} — {match['home']}\n"
+                    f"{match['home']} — {match['away']}\n"
                     f"└ 🕒 Начало в {start_time} МСК\n"
                 )
 
@@ -356,7 +355,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=10, minute=10, timezone=MOSCOW_TZ)
+        CronTrigger(hour=10, minute=20, timezone=MOSCOW_TZ)
     )
 
     scheduler.start()
