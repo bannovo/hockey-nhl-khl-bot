@@ -91,6 +91,8 @@ TEAM_CUSTOM_EMOJI = {
     "Амур": "5323509004436018932",
 }
 
+WAITING_FOR_EMOJI_ID = set()
+
 
 def utf16_len(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
@@ -400,6 +402,25 @@ def build_test_custom_emoji_message():
     return build_text_and_entities_from_lines(lines)
 
 
+def extract_custom_emoji_ids_from_message(message):
+    ids = []
+
+    if not message.entities:
+        return ids
+
+    for entity in message.entities:
+        entity_type = getattr(entity, "type", None)
+        custom_emoji_id = getattr(entity, "custom_emoji_id", None)
+
+        if custom_emoji_id is None:
+            custom_emoji_id = getattr(entity, "customemojiid", None)
+
+        if entity_type in ("custom_emoji", "customemoji") and custom_emoji_id:
+            ids.append(str(custom_emoji_id))
+
+    return ids
+
+
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
     logger.info(f"Получена команда /start от chat_id={message.chat.id}")
@@ -411,6 +432,7 @@ def send_welcome(message):
         "/day — матчи КХЛ текущего игрового дня\n"
         "/nhl — НХЛ временно недоступна\n"
         "/testemoji — тест custom emoji\n"
+        "/getemojiid — получить custom emoji id\n"
         "/id — показать ваш chat id"
     )
 
@@ -463,6 +485,36 @@ def send_testemoji(message):
     except Exception:
         logger.exception("Ошибка при отправке custom emoji сообщения")
         bot.send_message(message.chat.id, "⚠️ Не удалось отправить тестовое сообщение с custom emoji.")
+
+
+@bot.message_handler(commands=["getemojiid"])
+def getemojiid_start(message):
+    logger.info(f"Получена команда /getemojiid от chat_id={message.chat.id}")
+    WAITING_FOR_EMOJI_ID.add(message.chat.id)
+    bot.send_message(
+        message.chat.id,
+        "Отправь следующим сообщением один или несколько custom emoji из своего пака, и я верну их custom_emoji_id."
+    )
+
+
+@bot.message_handler(content_types=["text"])
+def handle_text_message(message):
+    if message.chat.id not in WAITING_FOR_EMOJI_ID:
+        return
+
+    WAITING_FOR_EMOJI_ID.discard(message.chat.id)
+
+    ids = extract_custom_emoji_ids_from_message(message)
+
+    if not ids:
+        bot.send_message(message.chat.id, "Не нашёл custom emoji в сообщении. Попробуй ещё раз: /getemojiid")
+        return
+
+    lines = ["Найдены custom_emoji_id:"]
+    for idx, custom_id in enumerate(ids, start=1):
+        lines.append(f"{idx}. {custom_id}")
+
+    bot.send_message(message.chat.id, "\n".join(lines))
 
 
 def safe_send_to_subscribers_khl():
