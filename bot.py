@@ -12,7 +12,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 
-BOT_TOKEN = os.getenv("8750772717:AAFC58ksrEf_jT9_9oEXDxTt2ew0lEWcjlY")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("Не задана переменная окружения BOT_TOKEN")
 
@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="Markdown")
 
-# ВШИТЫЙ chat id для проверки автоотправки
 AUTO_SEND_CHAT_IDS = [188181889]
 
 KHL_URL = "https://www.flashscorekz.com/hockey/russia/khl/results/"
@@ -222,7 +221,7 @@ def safe_send_to_subscribers(text: str):
 
 
 def scheduled_nhl():
-    logger.info("Запуск запланированной отправки НХЛ (заглушка)")
+    logger.info("Запуск запланированной отправки НХЛ")
     message = get_nhl_scores()
     safe_send_to_subscribers(message)
 
@@ -243,7 +242,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=15, minute=0, timezone=MOSCOW_TZ)
+        CronTrigger(hour=22, minute=0, timezone=MOSCOW_TZ)
     )
 
     scheduler.start()
@@ -263,11 +262,7 @@ def run_bot():
 
     while True:
         try:
-            bot.infinity_polling(
-                timeout=30,
-                long_polling_timeout=30,
-                skip_pending=True
-            )
+            bot.infinity_polling(timeout=30, long_polling_timeout=30, skip_pending=True)
         except Exception:
             logger.exception("Polling упал, перезапуск через 15 секунд...")
             time.sleep(15)
