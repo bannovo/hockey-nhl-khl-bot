@@ -385,6 +385,28 @@ def run_bot():
             time.sleep(15)
 
 
+@bot.message_handler(content_types=["text"])
+def debug_custom_emoji(message):
+    logger.info(f"Получено текстовое сообщение: {message.text!r}")
+
+    if not message.entities:
+        bot.reply_to(message, "В сообщении нет entities.")
+        return
+
+    lines = []
+    for entity in message.entities:
+        entity_type = getattr(entity, "type", None)
+        custom_emoji_id = getattr(entity, "custom_emoji_id", None)
+        offset = getattr(entity, "offset", None)
+        length = getattr(entity, "length", None)
+
+        lines.append(
+            f"type={entity_type}, offset={offset}, length={length}, custom_emoji_id={custom_emoji_id}"
+        )
+
+    reply = "Найдены entities:\n" + "\n".join(lines)
+    bot.reply_to(message, reply)
+    
 if __name__ == "__main__":
     logger.info("Бот запускается...")
     start_scheduler()
