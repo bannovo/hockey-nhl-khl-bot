@@ -366,33 +366,25 @@ def send_chat_id(message):
 @bot.message_handler(content_types=["text"])
 def debug_custom_emoji(message):
     logger.info(f"Получено текстовое сообщение: {message.text!r}")
+    logger.info(f"Raw entities: {message.entities}")
 
     if not message.entities:
-        bot.reply_to(message, "В сообщении нет entities.")
+        logger.info("В сообщении нет entities.")
         return
 
-    lines = []
     for entity in message.entities:
         entity_type = getattr(entity, "type", None)
-        if entity_type is None:
-            entity_type = getattr(entity, "type".replace("_", ""), None)
-
         custom_emoji_id = getattr(entity, "custom_emoji_id", None)
+
         if custom_emoji_id is None:
             custom_emoji_id = getattr(entity, "customemojiid", None)
-
-        if custom_emoji_id is None:
-            custom_emoji_id = getattr(entity, "custom_emojiid", None)
 
         offset = getattr(entity, "offset", None)
         length = getattr(entity, "length", None)
 
-        lines.append(
-            f"type={entity_type}, offset={offset}, length={length}, custom_emoji_id={custom_emoji_id}"
+        logger.info(
+            f"DEBUG ENTITY -> type={entity_type}, offset={offset}, length={length}, custom_emoji_id={custom_emoji_id}"
         )
-
-    reply = "Найдены entities:\n" + "\n".join(lines)
-    bot.reply_to(message, reply)
 
 
 def safe_send_to_subscribers(text: str):
