@@ -320,6 +320,46 @@ def get_nhl_scores():
     return "🏒 Данные НХЛ временно недоступны. Возвращаемся к этому позже."
 
 
+def send_message_with_custom_emojis(chat_id: int, text: str, custom_emoji_entities: list):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+        "entities": custom_emoji_entities,
+    }
+
+    response = requests.post(url, json=payload, timeout=30)
+    response.raise_for_status()
+
+    result = response.json()
+    if not result.get("ok"):
+        raise RuntimeError(f"Telegram API error: {result}")
+
+    return result
+
+
+def build_test_custom_emoji_message():
+    text = "😀 Торпедо — 😀 Амур"
+
+    entities = [
+        {
+            "type": "custom_emoji",
+            "offset": 0,
+            "length": 2,
+            "custom_emoji_id": TEAM_CUSTOM_EMOJI["Торпедо"],
+        },
+        {
+            "type": "custom_emoji",
+            "offset": 13,
+            "length": 2,
+            "custom_emoji_id": TEAM_CUSTOM_EMOJI["Амур"],
+        },
+    ]
+
+    return text, entities
+
+
 @bot.message_handler(commands=["start"])
 def send_welcome(message):
     logger.info(f"Получена команда /start от chat_id={message.chat.id}")
@@ -330,6 +370,7 @@ def send_welcome(message):
         "/khl — результаты КХЛ\n"
         "/day — матчи КХЛ текущего игрового дня\n"
         "/nhl — НХЛ временно недоступна\n"
+        "/testemoji — тест custom emoji\n"
         "/id — показать ваш chat id"
     )
 
@@ -360,6 +401,18 @@ def send_khl_day(message):
 def send_chat_id(message):
     logger.info(f"Получена команда /id от chat_id={message.chat.id}")
     bot.reply_to(message, f"Ваш chat id: {message.chat.id}")
+
+
+@bot.message_handler(commands=["testemoji"])
+def send_testemoji(message):
+    logger.info(f"Получена команда /testemoji от chat_id={message.chat.id}")
+
+    try:
+        text, entities = build_test_custom_emoji_message()
+        send_message_with_custom_emojis(message.chat.id, text, entities)
+    except Exception:
+        logger.exception("Ошибка при отправке custom emoji сообщения")
+        bot.send_message(message.chat.id, "⚠️ Не удалось отправить тестовое сообщение с custom emoji.")
 
 
 def safe_send_to_subscribers(text: str):
