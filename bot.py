@@ -584,22 +584,11 @@ def start_scheduler():
     return scheduler
 
 
-def try_remove_webhook():
-    try:
-        logger.info("Пробую удалить webhook...")
-        bot.remove_webhook()
-        logger.info("Webhook удален.")
-    except Exception:
-        logger.exception("Не удалось удалить webhook, продолжаю запуск polling без остановки.")
-
-
 def run_bot():
     logger.info("Бот начал опрос Telegram...")
 
     while True:
         try:
-            try_remove_webhook()
-
             bot.infinity_polling(
                 timeout=60,
                 long_polling_timeout=60,
