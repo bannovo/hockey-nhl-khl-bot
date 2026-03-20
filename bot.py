@@ -376,7 +376,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=15, minute=5, timezone=MOSCOW_TZ),
+        CronTrigger(hour=15, minute=45, timezone=MOSCOW_TZ),
         id="scheduled_khl",
         replace_existing=True
     )
