@@ -8,6 +8,7 @@ import pytz
 import telebot
 import requests
 
+from telebot import apihelper
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -15,6 +16,10 @@ from apscheduler.triggers.cron import CronTrigger
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("Не задана переменная окружения BOT_TOKEN")
+
+TELEGRAM_API_BASE = os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org")
+HTTP_PROXY = os.getenv("HTTP_PROXY") or os.getenv("http_proxy")
+HTTPS_PROXY = os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")
 
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
@@ -24,7 +29,29 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+if TELEGRAM_API_BASE.endswith("/"):
+    TELEGRAM_API_BASE = TELEGRAM_API_BASE[:-1]
+
+apihelper.API_URL = TELEGRAM_API_BASE + "/bot{0}/{1}"
+
+if HTTP_PROXY or HTTPS_PROXY:
+    proxy_url = HTTPS_PROXY or HTTP_PROXY
+    apihelper.proxy = {
+        "http": HTTP_PROXY or proxy_url,
+        "https": HTTPS_PROXY or proxy_url,
+    }
+    logger.info(f"Для telebot настроен proxy: {apihelper.proxy}")
+else:
+    logger.info("Proxy для telebot не задан.")
+
 bot = telebot.TeleBot(BOT_TOKEN)
+
+RAW_HTTP_SESSION = requests.Session()
+if HTTP_PROXY or HTTPS_PROXY:
+    RAW_HTTP_SESSION.proxies.update({
+        "http": HTTP_PROXY or HTTPS_PROXY,
+        "https": HTTPS_PROXY or HTTP_PROXY,
+    })
 
 AUTO_SEND_CHAT_IDS = [188181889]
 
@@ -284,7 +311,7 @@ def build_text_and_entities_from_lines(lines):
 
 
 def send_message_with_entities(chat_id: int, text: str, entities=None):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    url = f"{TELEGRAM_API_BASE}/bot{BOT_TOKEN}/sendMessage"
 
     payload = {
         "chat_id": chat_id,
@@ -297,7 +324,7 @@ def send_message_with_entities(chat_id: int, text: str, entities=None):
     logger.info(f"Отправка текста: {text!r}")
     logger.info(f"Отправка entities: {entities!r}")
 
-    response = requests.post(url, json=payload, timeout=30)
+    response = RAW_HTTP_SESSION.post(url, json=payload, timeout=30)
 
     logger.info(f"Telegram status_code: {response.status_code}")
     logger.info(f"Telegram response text: {response.text}")
@@ -592,7 +619,9 @@ def run_bot():
             bot.infinity_polling(
                 timeout=60,
                 long_polling_timeout=60,
-                skip_pending=True
+                skip_pending=False,
+                none_stop=True,
+                interval=3
             )
         except Exception:
             logger.exception("Polling упал, перезапуск через 15 секунд...")
