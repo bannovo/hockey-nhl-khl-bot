@@ -1,6 +1,5 @@
 import os
 import time
-import json
 import logging
 import datetime
 import re
@@ -471,7 +470,110 @@ def handle_khl(chat_id: int):
         text, entities = build_khl_scores_message()
         send_text_with_entities(chat_id, text, entities)
     except Exception:
-)
+        logger.exception("Ошибка при формировании/отправке результатов КХЛ")
+        send_text(chat_id, "⚠️ Произошла ошибка при получении данных КХЛ.")
+
+
+def handle_day(chat_id: int):
+    send_text(chat_id, "Смотрю матчи КХЛ на текущий игровой день...")
+    try:
+        text, entities = build_khl_day_message()
+        send_text_with_entities(chat_id, text, entities)
+    except Exception:
+        logger.exception("Ошибка при формировании/отправке игрового дня КХЛ")
+        send_text(chat_id, "⚠️ Не удалось получить расписание матчей КХЛ на сегодня.")
+
+
+def handle_nhl(chat_id: int):
+    send_text(chat_id, get_nhl_scores())
+
+
+def handle_id(chat_id: int):
+    send_text(chat_id, f"Ваш chat id: {chat_id}")
+
+
+def handle_testemoji(chat_id: int):
+    try:
+        text, entities = build_test_custom_emoji_message()
+        send_text_with_entities(chat_id, text, entities)
+    except Exception:
+        logger.exception("Ошибка при отправке custom emoji сообщения")
+        send_text(chat_id, "⚠️ Не удалось отправить тестовое сообщение с custom emoji.")
+
+
+def handle_getemojiid(chat_id: int):
+    WAITING_FOR_EMOJI_ID.add(chat_id)
+    send_text(
+        chat_id,
+        "Отправь следующим сообщением один или несколько custom emoji из своего пака, и я верну их custom_emoji_id."
+    )
+
+
+def handle_plain_text(message):
+    chat = message.get("chat", {})
+    chat_id = chat.get("id")
+    if chat_id not in WAITING_FOR_EMOJI_ID:
+        return
+
+    WAITING_FOR_EMOJI_ID.discard(chat_id)
+
+    ids = extract_custom_emoji_ids_from_message(message)
+    if not ids:
+        send_text(chat_id, "Не нашёл custom emoji в сообщении. Попробуй ещё раз: /getemojiid")
+        return
+
+    lines = ["Найдены custom_emoji_id:"]
+    for idx, custom_id in enumerate(ids, start=1):
+        lines.append(f"{idx}. {custom_id}")
+
+    send_text(chat_id, "\n".join(lines))
+
+
+def process_message(message):
+    chat = message.get("chat", {})
+    chat_id = chat.get("id")
+    text = message.get("text", "")
+
+    if not chat_id:
+        return
+
+    logger.info(f"Получено сообщение chat_id={chat_id}: {text!r}")
+
+    if text == "/start":
+        handle_start(chat_id)
+    elif text == "/khl":
+        handle_khl(chat_id)
+    elif text in ("/day", "/today"):
+        handle_day(chat_id)
+    elif text == "/nhl":
+        handle_nhl(chat_id)
+    elif text == "/id":
+        handle_id(chat_id)
+    elif text == "/testemoji":
+        handle_testemoji(chat_id)
+    elif text == "/getemojiid":
+        handle_getemojiid(chat_id)
+    else:
+        handle_plain_text(message)
+
+
+def safe_send_to_subscribers_khl():
+    if not AUTO_SEND_CHAT_IDS:
+        logger.info("AUTO_SEND_CHAT_IDS не заданы, автосообщения КХЛ пропущены.")
+        return
+
+    try:
+        text, entities = build_khl_scores_message()
+    except Exception:
+        logger.exception("Ошибка при подготовке автосообщения КХЛ")
+        return
+
+    for chat_id in AUTO_SEND_CHAT_IDS:
+        try:
+            send_text_with_entities(chat_id, text, entities)
+            logger.info(f"Отправлено KHL-сообщение в chat id={chat_id}")
+        except Exception:
+            logger.exception(f"Ошибка отправки KHL-сообщения в chat id={chat_id}")
 
 
 def safe_send_to_subscribers_nhl():
