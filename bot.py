@@ -170,7 +170,7 @@ def parse_khl_fixture_block(block: str):
 
 
 def fetch_khl_matches():
-    response = requests.get(KHL_URL, headers=KHL_HEADERS, timeout=20)
+    response = requests.get(KHL_URL, headers=KHL_HEADERS, timeout=30)
     response.raise_for_status()
 
     html = response.text
@@ -207,7 +207,7 @@ def fetch_khl_matches():
 
 
 def fetch_khl_fixtures():
-    response = requests.get(KHL_FIXTURES_URL, headers=KHL_HEADERS, timeout=20)
+    response = requests.get(KHL_FIXTURES_URL, headers=KHL_HEADERS, timeout=30)
     response.raise_for_status()
 
     html = response.text
@@ -566,12 +566,16 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_nhl,
-        CronTrigger(hour=10, minute=0, timezone=MOSCOW_TZ)
+        CronTrigger(hour=10, minute=0, timezone=MOSCOW_TZ),
+        id="scheduled_nhl",
+        replace_existing=True
     )
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=22, minute=0, timezone=MOSCOW_TZ)
+        CronTrigger(hour=22, minute=0, timezone=MOSCOW_TZ),
+        id="scheduled_khl",
+        replace_existing=True
     )
 
     scheduler.start()
@@ -580,20 +584,25 @@ def start_scheduler():
     return scheduler
 
 
-def run_bot():
-    logger.info("Бот начал опрос Telegram...")
-
+def try_remove_webhook():
     try:
+        logger.info("Пробую удалить webhook...")
         bot.remove_webhook()
         logger.info("Webhook удален.")
     except Exception:
-        logger.exception("Не удалось удалить webhook")
+        logger.exception("Не удалось удалить webhook, продолжаю запуск polling без остановки.")
+
+
+def run_bot():
+    logger.info("Бот начал опрос Telegram...")
 
     while True:
         try:
+            try_remove_webhook()
+
             bot.infinity_polling(
-                timeout=30,
-                long_polling_timeout=30,
+                timeout=60,
+                long_polling_timeout=60,
                 skip_pending=True
             )
         except Exception:
