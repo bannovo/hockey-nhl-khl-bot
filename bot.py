@@ -119,7 +119,7 @@ def tg_call(method: str, payload=None, timeout=45, retries=5, retry_delay=5):
 
     for attempt in range(1, retries + 1):
         try:
-            logger.info(f"Telegram call: method={method}, attempt={attempt}/{retries}")
+            logger.info(f"Telegram call method={method}, attempt={attempt}/{retries}")
             response = RAW_HTTP_SESSION.post(url, json=payload or {}, timeout=timeout)
 
             logger.info(f"Telegram status={response.status_code}")
@@ -131,14 +131,15 @@ def tg_call(method: str, payload=None, timeout=45, retries=5, retry_delay=5):
             if not data.get("ok"):
                 raise RuntimeError(f"Telegram API error: {data}")
 
+            logger.info(f"Telegram call success method={method}, attempt={attempt}/{retries}")
             return data["result"]
 
         except Exception as e:
             last_error = e
-            logger.exception(f"Ошибка Telegram method={method} attempt={attempt}/{retries}")
+            logger.exception(f"Telegram call failed method={method}, attempt={attempt}/{retries}")
 
             if attempt < retries:
-                logger.info(f"Повтор через {retry_delay} сек...")
+                logger.info(f"Следующая попытка через {retry_delay} сек...")
                 time.sleep(retry_delay)
 
     raise last_error
@@ -334,9 +335,9 @@ def safe_send_to_subscribers_khl():
     for chat_id in AUTO_SEND_CHAT_IDS:
         try:
             send_text_with_entities(chat_id, text, entities)
-            logger.info(f"Отправлено KHL-сообщение в chat id={chat_id}")
+            logger.info(f"DELIVERED: KHL message to chat_id={chat_id}")
         except Exception:
-            logger.exception(f"Ошибка отправки KHL-сообщения в chat id={chat_id}")
+            logger.exception(f"FAILED TO DELIVER: KHL message to chat_id={chat_id}")
 
 
 def safe_send_to_subscribers_nhl():
@@ -349,9 +350,9 @@ def safe_send_to_subscribers_nhl():
     for chat_id in AUTO_SEND_CHAT_IDS:
         try:
             send_text(chat_id, text)
-            logger.info(f"Отправлено NHL-сообщение в chat id={chat_id}")
+            logger.info(f"DELIVERED: NHL message to chat_id={chat_id}")
         except Exception:
-            logger.exception(f"Ошибка отправки NHL-сообщения в chat id={chat_id}")
+            logger.exception(f"FAILED TO DELIVER: NHL message to chat_id={chat_id}")
 
 
 def scheduled_nhl():
@@ -376,7 +377,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=14, minute=0, timezone=MOSCOW_TZ),
+        CronTrigger(hour=14, minute=15, timezone=MOSCOW_TZ),
         id="scheduled_khl",
         replace_existing=True
     )
