@@ -1,14 +1,13 @@
 import os
 import time
+import json
 import logging
 import datetime
 import re
 
 import pytz
-import telebot
 import requests
 
-from telebot import apihelper
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -32,26 +31,15 @@ logger = logging.getLogger(__name__)
 if TELEGRAM_API_BASE.endswith("/"):
     TELEGRAM_API_BASE = TELEGRAM_API_BASE[:-1]
 
-apihelper.API_URL = TELEGRAM_API_BASE + "/bot{0}/{1}"
-
-if HTTP_PROXY or HTTPS_PROXY:
-    proxy_url = HTTPS_PROXY or HTTP_PROXY
-    apihelper.proxy = {
-        "http": HTTP_PROXY or proxy_url,
-        "https": HTTPS_PROXY or proxy_url,
-    }
-    logger.info(f"Для telebot настроен proxy: {apihelper.proxy}")
-else:
-    logger.info("Proxy для telebot не задан.")
-
-bot = telebot.TeleBot(BOT_TOKEN)
-
 RAW_HTTP_SESSION = requests.Session()
 if HTTP_PROXY or HTTPS_PROXY:
     RAW_HTTP_SESSION.proxies.update({
         "http": HTTP_PROXY or HTTPS_PROXY,
         "https": HTTPS_PROXY or HTTP_PROXY,
     })
+    logger.info(f"Настроены proxy: {RAW_HTTP_SESSION.proxies}")
+else:
+    logger.info("Proxy не заданы.")
 
 AUTO_SEND_CHAT_IDS = [188181889]
 
@@ -123,6 +111,54 @@ WAITING_FOR_EMOJI_ID = set()
 
 def utf16_len(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
+
+
+def tg_api_url(method: str) -> str:
+    return f"{TELEGRAM_API_BASE}/bot{BOT_TOKEN}/{method}"
+
+
+def tg_call(method: str, payload=None, timeout=30):
+    url = tg_api_url(method)
+    response = RAW_HTTP_SESSION.post(url, json=payload or {}, timeout=timeout)
+
+    logger.info(f"Telegram method={method}, status={response.status_code}")
+    logger.info(f"Telegram response={response.text}")
+
+    response.raise_for_status()
+
+    data = response.json()
+    if not data.get("ok"):
+        raise RuntimeError(f"Telegram API error: {data}")
+
+    return data["result"]
+
+
+def send_text(chat_id: int, text: str):
+    return tg_call("sendMessage", {
+        "chat_id": chat_id,
+        "text": text,
+    })
+
+
+def send_text_with_entities(chat_id: int, text: str, entities=None):
+    payload = {
+        "chat_id": chat_id,
+        "text": text,
+    }
+    if entities:
+        payload["entities"] = entities
+    return tg_call("sendMessage", payload)
+
+
+def get_updates(offset=None, timeout=50):
+    payload = {
+        "timeout": timeout,
+        "allowed_updates": ["message"]
+    }
+    if offset is not None:
+        payload["offset"] = offset
+
+    return tg_call("getUpdates", payload, timeout=timeout + 10)
 
 
 def extract_khl_value(block: str, key: str):
@@ -310,34 +346,6 @@ def build_text_and_entities_from_lines(lines):
     return full_text.rstrip("\n"), entities
 
 
-def send_message_with_entities(chat_id: int, text: str, entities=None):
-    url = f"{TELEGRAM_API_BASE}/bot{BOT_TOKEN}/sendMessage"
-
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-    }
-
-    if entities:
-        payload["entities"] = entities
-
-    logger.info(f"Отправка текста: {text!r}")
-    logger.info(f"Отправка entities: {entities!r}")
-
-    response = RAW_HTTP_SESSION.post(url, json=payload, timeout=30)
-
-    logger.info(f"Telegram status_code: {response.status_code}")
-    logger.info(f"Telegram response text: {response.text}")
-
-    response.raise_for_status()
-
-    result = response.json()
-    if not result.get("ok"):
-        raise RuntimeError(f"Telegram API error: {result}")
-
-    return result
-
-
 def build_khl_scores_message():
     today_moscow = datetime.datetime.now(MOSCOW_TZ).date()
 
@@ -413,10 +421,6 @@ def build_khl_day_message():
     return build_text_and_entities_from_lines(lines)
 
 
-def get_nhl_scores():
-    return "🏒 Данные НХЛ временно недоступны. Возвращаемся к этому позже."
-
-
 def build_test_custom_emoji_message():
     lines = [
         [
@@ -429,30 +433,27 @@ def build_test_custom_emoji_message():
     return build_text_and_entities_from_lines(lines)
 
 
+def get_nhl_scores():
+    return "🏒 Данные НХЛ временно недоступны. Возвращаемся к этому позже."
+
+
 def extract_custom_emoji_ids_from_message(message):
     ids = []
 
-    if not message.entities:
-        return ids
+    entities = message.get("entities") or []
+    for entity in entities:
+        entity_type = entity.get("type")
+        custom_emoji_id = entity.get("custom_emoji_id")
 
-    for entity in message.entities:
-        entity_type = getattr(entity, "type", None)
-        custom_emoji_id = getattr(entity, "custom_emoji_id", None)
-
-        if custom_emoji_id is None:
-            custom_emoji_id = getattr(entity, "customemojiid", None)
-
-        if entity_type in ("custom_emoji", "customemoji") and custom_emoji_id:
+        if entity_type == "custom_emoji" and custom_emoji_id:
             ids.append(str(custom_emoji_id))
 
     return ids
 
 
-@bot.message_handler(commands=["start"])
-def send_welcome(message):
-    logger.info(f"Получена команда /start от chat_id={message.chat.id}")
-    bot.reply_to(
-        message,
+def handle_start(chat_id: int):
+    send_text(
+        chat_id,
         "Привет! Я бот с результатами матчей КХЛ и НХЛ.\n"
         "Команды:\n"
         "/khl — результаты КХЛ\n"
@@ -464,103 +465,13 @@ def send_welcome(message):
     )
 
 
-@bot.message_handler(commands=["nhl"])
-def send_nhl_now(message):
-    logger.info(f"Получена команда /nhl от chat_id={message.chat.id}")
-    bot.send_message(message.chat.id, "🏒 Данные НХЛ временно недоступны. Возвращаемся к этому позже.")
-
-
-@bot.message_handler(commands=["khl"])
-def send_khl_now(message):
-    logger.info(f"Получена команда /khl от chat_id={message.chat.id}")
-    bot.send_message(message.chat.id, "Запрашиваю данные по КХЛ...")
-
+def handle_khl(chat_id: int):
+    send_text(chat_id, "Запрашиваю данные по КХЛ...")
     try:
         text, entities = build_khl_scores_message()
-        send_message_with_entities(message.chat.id, text, entities)
+        send_text_with_entities(chat_id, text, entities)
     except Exception:
-        logger.exception("Ошибка при формировании/отправке результатов КХЛ")
-        bot.send_message(message.chat.id, "⚠️ Произошла ошибка при получении данных КХЛ.")
-
-
-@bot.message_handler(commands=["day", "today"])
-def send_khl_day(message):
-    logger.info(f"Получена команда /day от chat_id={message.chat.id}")
-    bot.send_message(message.chat.id, "Смотрю матчи КХЛ на текущий игровой день...")
-
-    try:
-        text, entities = build_khl_day_message()
-        send_message_with_entities(message.chat.id, text, entities)
-    except Exception:
-        logger.exception("Ошибка при формировании/отправке игрового дня КХЛ")
-        bot.send_message(message.chat.id, "⚠️ Не удалось получить расписание матчей КХЛ на сегодня.")
-
-
-@bot.message_handler(commands=["id"])
-def send_chat_id(message):
-    logger.info(f"Получена команда /id от chat_id={message.chat.id}")
-    bot.reply_to(message, f"Ваш chat id: {message.chat.id}")
-
-
-@bot.message_handler(commands=["testemoji"])
-def send_testemoji(message):
-    logger.info(f"Получена команда /testemoji от chat_id={message.chat.id}")
-
-    try:
-        text, entities = build_test_custom_emoji_message()
-        send_message_with_entities(message.chat.id, text, entities)
-    except Exception:
-        logger.exception("Ошибка при отправке custom emoji сообщения")
-        bot.send_message(message.chat.id, "⚠️ Не удалось отправить тестовое сообщение с custom emoji.")
-
-
-@bot.message_handler(commands=["getemojiid"])
-def getemojiid_start(message):
-    logger.info(f"Получена команда /getemojiid от chat_id={message.chat.id}")
-    WAITING_FOR_EMOJI_ID.add(message.chat.id)
-    bot.send_message(
-        message.chat.id,
-        "Отправь следующим сообщением один или несколько custom emoji из своего пака, и я верну их custom_emoji_id."
-    )
-
-
-@bot.message_handler(content_types=["text"])
-def handle_text_message(message):
-    if message.chat.id not in WAITING_FOR_EMOJI_ID:
-        return
-
-    WAITING_FOR_EMOJI_ID.discard(message.chat.id)
-
-    ids = extract_custom_emoji_ids_from_message(message)
-
-    if not ids:
-        bot.send_message(message.chat.id, "Не нашёл custom emoji в сообщении. Попробуй ещё раз: /getemojiid")
-        return
-
-    lines = ["Найдены custom_emoji_id:"]
-    for idx, custom_id in enumerate(ids, start=1):
-        lines.append(f"{idx}. {custom_id}")
-
-    bot.send_message(message.chat.id, "\n".join(lines))
-
-
-def safe_send_to_subscribers_khl():
-    if not AUTO_SEND_CHAT_IDS:
-        logger.info("AUTO_SEND_CHAT_IDS не заданы, автосообщения КХЛ пропущены.")
-        return
-
-    try:
-        text, entities = build_khl_scores_message()
-    except Exception:
-        logger.exception("Ошибка при подготовке автосообщения КХЛ")
-        return
-
-    for chat_id in AUTO_SEND_CHAT_IDS:
-        try:
-            send_message_with_entities(chat_id, text, entities)
-            logger.info(f"Отправлено KHL-сообщение в chat id={chat_id}")
-        except Exception:
-            logger.exception(f"Ошибка отправки KHL-сообщения в chat id={chat_id}")
+)
 
 
 def safe_send_to_subscribers_nhl():
@@ -572,7 +483,7 @@ def safe_send_to_subscribers_nhl():
 
     for chat_id in AUTO_SEND_CHAT_IDS:
         try:
-            bot.send_message(chat_id, text)
+            send_text(chat_id, text)
             logger.info(f"Отправлено NHL-сообщение в chat id={chat_id}")
         except Exception:
             logger.exception(f"Ошибка отправки NHL-сообщения в chat id={chat_id}")
@@ -612,20 +523,25 @@ def start_scheduler():
 
 
 def run_bot():
-    logger.info("Бот начал опрос Telegram...")
+    logger.info("Бот начал polling через raw Telegram API...")
+    update_offset = None
 
     while True:
         try:
-            bot.infinity_polling(
-                timeout=60,
-                long_polling_timeout=60,
-                skip_pending=False,
-                none_stop=True,
-                interval=3
-            )
+            updates = get_updates(offset=update_offset, timeout=50)
+
+            for upd in updates:
+                update_id = upd.get("update_id")
+                if update_id is not None:
+                    update_offset = update_id + 1
+
+                message = upd.get("message")
+                if message:
+                    process_message(message)
+
         except Exception:
-            logger.exception("Polling упал, перезапуск через 15 секунд...")
-            time.sleep(15)
+            logger.exception("Ошибка в polling, повтор через 10 секунд...")
+            time.sleep(10)
 
 
 if __name__ == "__main__":
