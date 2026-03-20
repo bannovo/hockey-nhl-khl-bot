@@ -105,8 +105,6 @@ TEAM_CUSTOM_EMOJI = {
     "Амур": "5323509004436018932",
 }
 
-WAITING_FOR_EMOJI_ID = set()
-
 
 def utf16_len(text: str) -> int:
     return len(text.encode("utf-16-le")) // 2
@@ -149,17 +147,6 @@ def send_text_with_entities(chat_id: int, text: str, entities=None):
     return tg_call("sendMessage", payload)
 
 
-def get_updates(offset=None, timeout=50):
-    payload = {
-        "timeout": timeout,
-        "allowed_updates": ["message"]
-    }
-    if offset is not None:
-        payload["offset"] = offset
-
-    return tg_call("getUpdates", payload, timeout=timeout + 10)
-
-
 def extract_khl_value(block: str, key: str):
     pattern = rf"{re.escape(key)}÷(.*?)(?:¬|$)"
     match = re.search(pattern, block)
@@ -180,37 +167,6 @@ def parse_khl_match_block(block: str):
         return None
 
     if home_score is None or away_score is None:
-        return None
-
-    match_data = {
-        "home": home,
-        "away": away,
-        "home_score": home_score,
-        "away_score": away_score,
-        "timestamp": timestamp,
-        "date": None,
-        "dt": None,
-    }
-
-    if timestamp and timestamp.isdigit():
-        dt = datetime.datetime.fromtimestamp(int(timestamp), tz=MOSCOW_TZ)
-        match_data["date"] = dt.strftime("%d.%m.%Y %H:%M")
-        match_data["dt"] = dt
-
-    return match_data
-
-
-def parse_khl_fixture_block(block: str):
-    home = extract_khl_value(block, "CX") or extract_khl_value(block, "AE")
-    away = extract_khl_value(block, "AF")
-    timestamp = extract_khl_value(block, "AD")
-    home_score = extract_khl_value(block, "AG")
-    away_score = extract_khl_value(block, "AH")
-
-    if not home or not away:
-        return None
-
-    if home not in KHL_TEAMS or away not in KHL_TEAMS:
         return None
 
     match_data = {
@@ -263,40 +219,6 @@ def fetch_khl_matches():
     unique_matches.sort(
         key=lambda x: x["dt"] if x["dt"] else min_dt,
         reverse=True
-    )
-
-    return unique_matches
-
-
-def fetch_khl_fixtures():
-    response = requests.get(KHL_FIXTURES_URL, headers=KHL_HEADERS, timeout=30)
-    response.raise_for_status()
-
-    html = response.text
-    raw_blocks = html.split("~AA÷")
-    matches = []
-
-    for block in raw_blocks:
-        match_data = parse_khl_fixture_block(block)
-        if match_data:
-            matches.append(match_data)
-
-    unique_matches = []
-    seen = set()
-
-    for match in matches:
-        key = (
-            match["home"],
-            match["away"],
-            match["timestamp"],
-        )
-        if key not in seen:
-            seen.add(key)
-            unique_matches.append(match)
-
-    min_dt = MOSCOW_TZ.localize(datetime.datetime(1970, 1, 1))
-    unique_matches.sort(
-        key=lambda x: x["dt"] if x["dt"] else min_dt
     )
 
     return unique_matches
@@ -380,181 +302,8 @@ def build_khl_scores_message():
     return build_text_and_entities_from_lines(lines)
 
 
-def build_khl_day_message():
-    today_moscow = datetime.datetime.now(MOSCOW_TZ).date()
-
-    logger.info("Запрашиваю расписание КХЛ на текущий игровой день")
-    matches = fetch_khl_fixtures()
-    logger.info(f"Всего получено матчей КХЛ из fixtures: {len(matches)}")
-
-    today_matches = [m for m in matches if m["dt"] and m["dt"].date() == today_moscow]
-    logger.info(f"Матчей КХЛ на сегодня: {len(today_matches)}")
-
-    if not today_matches:
-        return f"📅 Матчи КХЛ на {today_moscow.strftime('%d.%m.%Y')}\n\nНа сегодня матчей не найдено.", []
-
-    lines = []
-    lines.append([f"📅 Матчи КХЛ на {today_moscow.strftime('%d.%m.%Y')}"])
-    lines.append([""])
-
-    for match in today_matches:
-        home_token = build_team_token(match["home"])
-        away_token = build_team_token(match["away"])
-
-        if match["home_score"] is not None and match["away_score"] is not None:
-            lines.append([
-                home_token, " ", match["home"], " ",
-                match["home_score"], " : ", match["away_score"], " ",
-                away_token, " ", match["away"]
-            ])
-        else:
-            start_time = match["dt"].strftime("%H:%M") if match["dt"] else "—:—"
-            lines.append([
-                home_token, " ", match["home"], " — ",
-                away_token, " ", match["away"]
-            ])
-            lines.append([f"└ 🕒 Начало в {start_time} МСК"])
-
-        lines.append([""])
-
-    return build_text_and_entities_from_lines(lines)
-
-
-def build_test_custom_emoji_message():
-    lines = [
-        [
-            {"text": "😀", "custom_emoji_id": TEAM_CUSTOM_EMOJI["Торпедо"]},
-            " Торпедо — ",
-            {"text": "😀", "custom_emoji_id": TEAM_CUSTOM_EMOJI["Амур"]},
-            " Амур"
-        ]
-    ]
-    return build_text_and_entities_from_lines(lines)
-
-
 def get_nhl_scores():
     return "🏒 Данные НХЛ временно недоступны. Возвращаемся к этому позже."
-
-
-def extract_custom_emoji_ids_from_message(message):
-    ids = []
-
-    entities = message.get("entities") or []
-    for entity in entities:
-        entity_type = entity.get("type")
-        custom_emoji_id = entity.get("custom_emoji_id")
-
-        if entity_type == "custom_emoji" and custom_emoji_id:
-            ids.append(str(custom_emoji_id))
-
-    return ids
-
-
-def handle_start(chat_id: int):
-    send_text(
-        chat_id,
-        "Привет! Я бот с результатами матчей КХЛ и НХЛ.\n"
-        "Команды:\n"
-        "/khl — результаты КХЛ\n"
-        "/day — матчи КХЛ текущего игрового дня\n"
-        "/nhl — НХЛ временно недоступна\n"
-        "/testemoji — тест custom emoji\n"
-        "/getemojiid — получить custom emoji id\n"
-        "/id — показать ваш chat id"
-    )
-
-
-def handle_khl(chat_id: int):
-    send_text(chat_id, "Запрашиваю данные по КХЛ...")
-    try:
-        text, entities = build_khl_scores_message()
-        send_text_with_entities(chat_id, text, entities)
-    except Exception:
-        logger.exception("Ошибка при формировании/отправке результатов КХЛ")
-        send_text(chat_id, "⚠️ Произошла ошибка при получении данных КХЛ.")
-
-
-def handle_day(chat_id: int):
-    send_text(chat_id, "Смотрю матчи КХЛ на текущий игровой день...")
-    try:
-        text, entities = build_khl_day_message()
-        send_text_with_entities(chat_id, text, entities)
-    except Exception:
-        logger.exception("Ошибка при формировании/отправке игрового дня КХЛ")
-        send_text(chat_id, "⚠️ Не удалось получить расписание матчей КХЛ на сегодня.")
-
-
-def handle_nhl(chat_id: int):
-    send_text(chat_id, get_nhl_scores())
-
-
-def handle_id(chat_id: int):
-    send_text(chat_id, f"Ваш chat id: {chat_id}")
-
-
-def handle_testemoji(chat_id: int):
-    try:
-        text, entities = build_test_custom_emoji_message()
-        send_text_with_entities(chat_id, text, entities)
-    except Exception:
-        logger.exception("Ошибка при отправке custom emoji сообщения")
-        send_text(chat_id, "⚠️ Не удалось отправить тестовое сообщение с custom emoji.")
-
-
-def handle_getemojiid(chat_id: int):
-    WAITING_FOR_EMOJI_ID.add(chat_id)
-    send_text(
-        chat_id,
-        "Отправь следующим сообщением один или несколько custom emoji из своего пака, и я верну их custom_emoji_id."
-    )
-
-
-def handle_plain_text(message):
-    chat = message.get("chat", {})
-    chat_id = chat.get("id")
-    if chat_id not in WAITING_FOR_EMOJI_ID:
-        return
-
-    WAITING_FOR_EMOJI_ID.discard(chat_id)
-
-    ids = extract_custom_emoji_ids_from_message(message)
-    if not ids:
-        send_text(chat_id, "Не нашёл custom emoji в сообщении. Попробуй ещё раз: /getemojiid")
-        return
-
-    lines = ["Найдены custom_emoji_id:"]
-    for idx, custom_id in enumerate(ids, start=1):
-        lines.append(f"{idx}. {custom_id}")
-
-    send_text(chat_id, "\n".join(lines))
-
-
-def process_message(message):
-    chat = message.get("chat", {})
-    chat_id = chat.get("id")
-    text = message.get("text", "")
-
-    if not chat_id:
-        return
-
-    logger.info(f"Получено сообщение chat_id={chat_id}: {text!r}")
-
-    if text == "/start":
-        handle_start(chat_id)
-    elif text == "/khl":
-        handle_khl(chat_id)
-    elif text in ("/day", "/today"):
-        handle_day(chat_id)
-    elif text == "/nhl":
-        handle_nhl(chat_id)
-    elif text == "/id":
-        handle_id(chat_id)
-    elif text == "/testemoji":
-        handle_testemoji(chat_id)
-    elif text == "/getemojiid":
-        handle_getemojiid(chat_id)
-    else:
-        handle_plain_text(message)
 
 
 def safe_send_to_subscribers_khl():
@@ -624,29 +373,14 @@ def start_scheduler():
     return scheduler
 
 
-def run_bot():
-    logger.info("Бот начал polling через raw Telegram API...")
-    update_offset = None
+def run_forever():
+    logger.info("Бот запущен в режиме scheduler-only. Polling отключён.")
 
     while True:
-        try:
-            updates = get_updates(offset=update_offset, timeout=50)
-
-            for upd in updates:
-                update_id = upd.get("update_id")
-                if update_id is not None:
-                    update_offset = update_id + 1
-
-                message = upd.get("message")
-                if message:
-                    process_message(message)
-
-        except Exception:
-            logger.exception("Ошибка в polling, повтор через 10 секунд...")
-            time.sleep(10)
+        time.sleep(3600)
 
 
 if __name__ == "__main__":
     logger.info("Бот запускается...")
     start_scheduler()
-    run_bot()
+    run_forever()
