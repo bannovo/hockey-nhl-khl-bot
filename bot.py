@@ -43,7 +43,6 @@ else:
 AUTO_SEND_CHAT_IDS = [188181889]
 
 KHL_URL = "https://www.flashscorekz.com/hockey/russia/khl/results/"
-KHL_FIXTURES_URL = "https://www.flashscorekz.com/hockey/russia/khl/fixtures/"
 KHL_HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
@@ -114,20 +113,35 @@ def tg_api_url(method: str) -> str:
     return f"{TELEGRAM_API_BASE}/bot{BOT_TOKEN}/{method}"
 
 
-def tg_call(method: str, payload=None, timeout=30):
+def tg_call(method: str, payload=None, timeout=45, retries=5, retry_delay=5):
     url = tg_api_url(method)
-    response = RAW_HTTP_SESSION.post(url, json=payload or {}, timeout=timeout)
+    last_error = None
 
-    logger.info(f"Telegram method={method}, status={response.status_code}")
-    logger.info(f"Telegram response={response.text}")
+    for attempt in range(1, retries + 1):
+        try:
+            logger.info(f"Telegram call: method={method}, attempt={attempt}/{retries}")
+            response = RAW_HTTP_SESSION.post(url, json=payload or {}, timeout=timeout)
 
-    response.raise_for_status()
+            logger.info(f"Telegram status={response.status_code}")
+            logger.info(f"Telegram response={response.text}")
 
-    data = response.json()
-    if not data.get("ok"):
-        raise RuntimeError(f"Telegram API error: {data}")
+            response.raise_for_status()
 
-    return data["result"]
+            data = response.json()
+            if not data.get("ok"):
+                raise RuntimeError(f"Telegram API error: {data}")
+
+            return data["result"]
+
+        except Exception as e:
+            last_error = e
+            logger.exception(f"Ошибка Telegram method={method} attempt={attempt}/{retries}")
+
+            if attempt < retries:
+                logger.info(f"Повтор через {retry_delay} сек...")
+                time.sleep(retry_delay)
+
+    raise last_error
 
 
 def send_text(chat_id: int, text: str):
@@ -362,7 +376,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=13, minute=40, timezone=MOSCOW_TZ),
+        CronTrigger(hour=14, minute=0, timezone=MOSCOW_TZ),
         id="scheduled_khl",
         replace_existing=True
     )
