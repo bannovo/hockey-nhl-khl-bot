@@ -123,7 +123,6 @@ def tg_call(method: str, payload=None, timeout=45, retries=5, retry_delay=5):
             response = RAW_HTTP_SESSION.post(url, json=payload or {}, timeout=timeout)
 
             logger.info(f"Telegram status={response.status_code}")
-            logger.info(f"Telegram response={response.text}")
 
             response.raise_for_status()
 
@@ -136,7 +135,7 @@ def tg_call(method: str, payload=None, timeout=45, retries=5, retry_delay=5):
 
         except Exception as e:
             last_error = e
-            logger.exception(f"Telegram call failed method={method}, attempt={attempt}/{retries}")
+            logger.warning(f"Telegram call failed method={method}, attempt={attempt}/{retries}: {repr(e)}")
 
             if attempt < retries:
                 logger.info(f"Следующая попытка через {retry_delay} сек...")
@@ -328,16 +327,16 @@ def safe_send_to_subscribers_khl():
 
     try:
         text, entities = build_khl_scores_message()
-    except Exception:
-        logger.exception("Ошибка при подготовке автосообщения КХЛ")
+    except Exception as e:
+        logger.error(f"Ошибка при подготовке автосообщения КХЛ: {repr(e)}")
         return
 
     for chat_id in AUTO_SEND_CHAT_IDS:
         try:
             send_text_with_entities(chat_id, text, entities)
             logger.info(f"DELIVERED: KHL message to chat_id={chat_id}")
-        except Exception:
-            logger.exception(f"FAILED TO DELIVER: KHL message to chat_id={chat_id}")
+        except Exception as e:
+            logger.error(f"FAILED TO DELIVER: KHL message to chat_id={chat_id}: {repr(e)}")
 
 
 def safe_send_to_subscribers_nhl():
@@ -351,8 +350,8 @@ def safe_send_to_subscribers_nhl():
         try:
             send_text(chat_id, text)
             logger.info(f"DELIVERED: NHL message to chat_id={chat_id}")
-        except Exception:
-            logger.exception(f"FAILED TO DELIVER: NHL message to chat_id={chat_id}")
+        except Exception as e:
+            logger.error(f"FAILED TO DELIVER: NHL message to chat_id={chat_id}: {repr(e)}")
 
 
 def scheduled_nhl():
@@ -377,7 +376,7 @@ def start_scheduler():
 
     scheduler.add_job(
         scheduled_khl,
-        CronTrigger(hour=14, minute=30, timezone=MOSCOW_TZ),
+        CronTrigger(hour=15, minute=5, timezone=MOSCOW_TZ),
         id="scheduled_khl",
         replace_existing=True
     )
